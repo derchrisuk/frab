@@ -11,7 +11,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema.define(version: 20150913094318) do
+ActiveRecord::Schema.define(version: 20150913094717) do
 
   create_table "availabilities", force: :cascade do |t|
     t.integer  "person_id"
@@ -278,12 +278,11 @@ ActiveRecord::Schema.define(version: 20150913094318) do
   add_index "phone_numbers", ["person_id"], name: "index_phone_numbers_on_person_id"
 
   create_table "rooms", force: :cascade do |t|
-    t.integer  "conference_id",                            null: false
-    t.string   "name",          limit: 255,                null: false
+    t.integer  "conference_id",             null: false
+    t.string   "name",          limit: 255, null: false
     t.integer  "size"
-    t.boolean  "public",                    default: true
-    t.datetime "created_at",                               null: false
-    t.datetime "updated_at",                               null: false
+    t.datetime "created_at",                null: false
+    t.datetime "updated_at",                null: false
     t.integer  "rank"
   end
 
