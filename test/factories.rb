@@ -118,7 +118,6 @@ FactoryGirl.define do
 
   factory :room do
     name { generate(:room_names) }
-    public true
   end
 
   factory :conference do
