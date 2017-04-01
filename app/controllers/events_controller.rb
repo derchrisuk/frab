@@ -25,7 +25,16 @@ class EventsController < ApplicationController
     @events = @conference.events.is_public.accepted
 
     respond_to do |format|
-      format.json
+      format.json { render :export }
+    end
+  end
+
+  def export_confirmed
+    authorize! :read, Event
+    @events = @conference.events.is_public.confirmed
+
+    respond_to do |format|
+      format.json { render :export }
     end
   end
 
@@ -62,7 +71,7 @@ class EventsController < ApplicationController
 
     # total ratings:
     @events_total = @conference.events.count
-    @events_reviewed_total = @conference.events.to_a.count { |e| !e.event_ratings_count.nil? and e.event_ratings_count > 0 }
+    @events_reviewed_total = @conference.events.to_a.count { |e| !e.event_ratings_count.nil? && e.event_ratings_count > 0 }
     @events_no_review_total = @events_total - @events_reviewed_total
 
     # current_user rated:
@@ -115,6 +124,7 @@ class EventsController < ApplicationController
   def new
     authorize! :crud, Event
     @event = Event.new
+    @start_time_options = @conference.start_times_by_day
 
     respond_to do |format|
       format.html # new.html.erb
@@ -125,14 +135,14 @@ class EventsController < ApplicationController
   def edit
     @event = Event.find(params[:id])
     authorize! :update, @event
+
+    @start_time_options = @event.possible_start_times
   end
 
   # GET /events/2/edit_people
   def edit_people
     @event = Event.find(params[:id])
-    @persons = Person.all.sort_by(&:full_name).map do |p|
-      { id: p.id, text: p.full_name_annotated }
-    end
+    @persons = Person.fullname_options
 
     authorize! :update, @event
   end
@@ -147,6 +157,7 @@ class EventsController < ApplicationController
       if @event.save
         format.html { redirect_to(@event, notice: 'Event was successfully created.') }
       else
+        @start_time_options = @conference.start_times_by_day
         format.html { render action: 'new' }
       end
     end
@@ -162,6 +173,7 @@ class EventsController < ApplicationController
         format.html { redirect_to(@event, notice: 'Event was successfully updated.') }
         format.js   { head :ok }
       else
+        @start_time_options = @event.possible_start_times
         format.html { render action: 'edit' }
         format.js { render json: @event.errors, status: :unprocessable_entity }
       end
@@ -189,10 +201,32 @@ class EventsController < ApplicationController
     begin
       @event.send(:"#{params[:transition]}!", send_mail: params[:send_mail], coordinator: current_user.person)
     rescue => ex
-      return redirect_to(@event, alert: "Cannot send mails: #{ex}.")
+      return redirect_to(@event, alert: "Cannot update state: #{ex}.")
     end
 
     redirect_to @event, notice: 'Event was successfully updated.'
+  end
+
+  # add custom notifications to all the event's speakers
+  # POST /events/2/custom_notification
+  def custom_notification
+    @event = Event.find(params[:id])
+    authorize! :update, @event
+
+    case @event.state
+    when 'accepting'
+      state = 'accept'
+    when 'rejecting'
+      state = 'reject'
+    when 'confirmed'
+      state = 'schedule'
+    else
+      return redirect_to(@event, alert: "Event not in a notifiable state.")
+    end
+
+    @event.event_people.presenter.each{ |p| p.set_default_notification(state) }
+
+    redirect_to edit_people_event_path(@event)
   end
 
   # DELETE /events/1
@@ -222,7 +256,7 @@ class EventsController < ApplicationController
     filter = events
     filter = filter.where(state: params[:event_state]) if params[:event_state].present?
     filter = filter.where(event_type: params[:event_type]) if params[:event_type].present?
-    filter = filter.where(track: Track.find_by(:name => params[:track_name])) if params[:track_name].present?
+    filter = filter.where(track: @conference.tracks.find_by(:name => params[:track_name])) if params[:track_name].present?
 
     if params.key?(:term) and not params[:term].empty?
       term = params[:term]
@@ -251,7 +285,7 @@ class EventsController < ApplicationController
       event_attachments_attributes: %i(id title attachment public _destroy),
       ticket_attributes: %i(id remote_ticket_id),
       links_attributes: %i(id title url _destroy),
-      event_people_attributes: %i(id person_id event_role role_state _destroy)
+      event_people_attributes: %i(id person_id event_role role_state notification_subject notification_body _destroy)
     )
   end
 end

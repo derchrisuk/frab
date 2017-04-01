@@ -1,5 +1,5 @@
 class Person < ActiveRecord::Base
-  GENDERS = %w(male female other)
+  GENDERS = %w(male female other).freeze
 
   has_many :availabilities, dependent: :destroy
   has_many :event_people, dependent: :destroy
@@ -38,17 +38,23 @@ class Person < ActiveRecord::Base
   # validates_inclusion_of :gender, in: GENDERS, allow_nil: true
 
   scope :involved_in, ->(conference) {
-    joins(events: :conference).where("conferences.id": conference.id).uniq
+    joins(events: :conference).where('conferences.id': conference).uniq
   }
   scope :speaking_at, ->(conference) {
-    joins(events: :conference).where("conferences.id": conference.id).where("event_people.event_role": %w(speaker moderator)).where("events.state": %w(unconfirmed confirmed)).uniq
+    joins(events: :conference).where('conferences.id': conference).where('event_people.event_role': EventPerson::SPEAKER).where('events.state': Event::ACCEPTED).uniq
   }
   scope :publicly_speaking_at, ->(conference) {
-    joins(events: :conference).where("conferences.id": conference.id).where("event_people.event_role": %w(speaker moderator)).where("events.public": true).where("events.state": %w(unconfirmed confirmed)).uniq
+    joins(events: :conference).where('conferences.id': conference).where('event_people.event_role': EventPerson::SPEAKER).where('events.public': true).where('events.state': Event::ACCEPTED).uniq
   }
   scope :confirmed, ->(conference) {
-    joins(events: :conference).where("conferences.id": conference.id).where("events.state": 'confirmed')
+    joins(events: :conference).where('conferences.id': conference).where('events.state': %w(confirmed scheduled))
   }
+
+  def self.fullname_options
+    all.sort_by(&:full_name).map do |p|
+      { id: p.id, text: p.full_name_annotated }
+    end
+  end
 
   def newer_than?(person)
     updated_at > person.updated_at
@@ -67,57 +73,59 @@ class Person < ActiveRecord::Base
   end
 
   def user_email
-    self.user.email if self.user.present?
+    user.email if user.present?
   end
 
   def avatar_path(size = :large)
-    self.avatar(size) if self.avatar.present?
+    avatar(size) if avatar.present?
   end
 
   def involved_in?(conference)
     found = Person.joins(events: :conference)
-            .where("conferences.id": conference.id)
-            .where(id: self.id).count
-    found > 0
+                  .where('conferences.id': conference.id)
+                  .where(id: id)
+                  .count
+    found.positive?
   end
 
   def active_in_any_conference?
     found = Conference.joins(events: [{ event_people: :person }])
-            .where(Event.arel_table[:state].in(%w(confirmed unconfirmed)))
-            .where(EventPerson.arel_table[:event_role].in(%w(speaker moderator)))
-            .where(Person.arel_table[:id].eq(self.id)).count
-    found > 0
+                      .where(Event.arel_table[:state].in(Event::ACCEPTED))
+                      .where(EventPerson.arel_table[:event_role].in(EventPerson::SPEAKER))
+                      .where(Person.arel_table[:id].eq(id))
+                      .count
+    found.positive?
   end
 
   def events_in(conference)
-    self.events.where(conference_id: conference.id)
+    events.where(conference_id: conference.id)
   end
 
   def events_as_presenter_in(conference)
-    self.events.where("event_people.event_role": %w(speaker moderator), conference_id: conference.id)
+    events.where('event_people.event_role': EventPerson::SPEAKER, conference: conference)
   end
 
   def events_as_presenter_not_in(conference)
-    self.events.where("event_people.event_role": %w(speaker moderator)).where('conference_id != ?', conference.id)
+    events.where('event_people.event_role': EventPerson::SPEAKER).where.not(conference: conference)
   end
 
   def public_and_accepted_events_as_speaker_in(conference)
-    self.events.is_public.accepted.where("events.state": :confirmed, "event_people.event_role": %w(speaker moderator), conference_id: conference.id)
+    events.is_public.accepted.where('events.state': %w(confirmed scheduled), 'event_people.event_role': EventPerson::SPEAKER, conference_id: conference)
   end
 
   def role_state(conference)
-    speaker_role_state(conference).map(&:role_state).uniq.join ', '
+    event_people.presenter_at(conference).map(&:role_state).uniq.join ', '
   end
 
   def set_role_state(conference, state)
-    speaker_role_state(conference).each do |ep|
+    event_people.presenter_at(conference).each do |ep|
       ep.role_state = state
       ep.save!
     end
   end
 
   def availabilities_in(conference)
-    availabilities = self.availabilities.where(conference_id: conference.id)
+    availabilities = self.availabilities.where(conference: conference)
     availabilities.each { |a|
       a.start_date = a.start_date.in_time_zone
       a.end_date = a.end_date.in_time_zone
@@ -137,11 +145,11 @@ class Person < ActiveRecord::Base
       v['start_date'] = Time.zone.parse(v['start_date'])
       v['end_date'] = Time.zone.parse(v['end_date'])
     }
-    self.update_attributes(params)
+    update_attributes(params)
   end
 
   def average_feedback_as_speaker
-    events = self.event_people.where(event_role: %w(speaker moderator)).map(&:event)
+    events = event_people.where(event_role: EventPerson::SPEAKER).map(&:event)
     feedback = 0.0
     count = 0
     events.each do |event|
@@ -155,18 +163,18 @@ class Person < ActiveRecord::Base
   end
 
   def locale_for_mailing(conference)
-    own_locales = self.languages.all.map { |l| l.code.downcase.to_sym }
+    own_locales = languages.all.map { |l| l.code.downcase.to_sym }
     conference_locales = conference.languages.all.map { |l| l.code.downcase.to_sym }
     return :en if own_locales.include? :en or own_locales.empty? or (own_locales & conference_locales).empty?
     (own_locales & conference_locales).first
   end
 
   def sum_of_expenses(conference, reimbursed)
-    self.expenses.where(conference_id: conference.id, reimbursed: reimbursed).sum(:value)
+    expenses.where(conference_id: conference.id, reimbursed: reimbursed).sum(:value)
   end
 
   def to_s
-    "#{model_name.human}: #{self.full_name}"
+    "#{model_name.human}: #{full_name}"
   end
 
   def remote_ticket?
@@ -179,11 +187,7 @@ class Person < ActiveRecord::Base
 
   private
 
-  def speaker_role_state(conference)
-    self.event_people.select { |ep| ep.event.conference == conference }.select { |ep| %w(speaker moderator).include? ep.event_role }
-  end
-
   def nilify_empty
-    self.gender = nil if self.gender and self.gender.empty?
+    self.gender = nil if gender and gender.empty?
   end
 end

@@ -5,9 +5,12 @@ json.array! @events do |e|
   json.room_name e.room.try(:name)
   json.duration e.duration_in_minutes
   json.speaker_names e.speakers.map(&:public_name).join(', ')
+  json.event_url event_url(e)
   json.speakers e.speakers do |speaker|
     json.public_name speaker.public_name
-    json.availabilities speaker.availabilities do |availibility|
+    json.abstract speaker.abstract
+    json.description speaker.description
+    json.availabilities speaker.availabilities_in(e.conference) do |availibility|
       json.extract! availibility, :start_date, :end_date, :day_id
     end
   end

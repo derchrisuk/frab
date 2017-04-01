@@ -112,7 +112,7 @@ class StaticProgramExport
 
   def query_paths
     paths = static_query_paths
-    day_index = 0
+    day_index = 1
     @conference.days.each do |_day|
       paths << { source: "schedule/#{day_index}", target: "schedule/#{day_index}.html" }
       paths << { source: "schedule/#{day_index}.pdf", target: "schedule/#{day_index}.pdf" }
@@ -190,12 +190,18 @@ class StaticProgramExport
           strip_asset_path(link, 'href')
         else
           path = @base_url + strip_path(href.value)
-          path += '.html' unless path =~ /\.\w+$/
+          path = add_html_ext(path) unless path =~ /\.\w+$/
           href.value = path
         end
       end
     end
     document
+  end
+
+  def add_html_ext(path)
+    uri = URI.parse(path)
+    uri.path += '.html'
+    uri.to_s
   end
 
   def strip_asset_path(element, attribute)

@@ -9,7 +9,7 @@ json.schedule do
     end
     json.daysCount @conference.days.length
     json.timeslot_duration duration_to_time(@conference.timeslot_duration)
-    index = 0
+    index = 1
     json.days @conference.days do |day|
       json.index index
       index += 1
@@ -17,7 +17,7 @@ json.schedule do
       json.day_start day.start_date.iso8601
       json.day_end day.end_date.iso8601
       json.rooms do
-        @conference.rooms.is_public.each do |room|
+        @conference.rooms_including_subs.each do |room|
           json.set! room.name, room.events.is_public.accepted.scheduled_on(day).order(:start_time) do |event|
             json.id event.id
             json.guid event.guid

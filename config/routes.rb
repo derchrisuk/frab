@@ -23,6 +23,7 @@ Frab::Application.routes.draw do
         get '/events/:id' => 'schedule#event', as: 'event'
         get '/speakers' => 'schedule#speakers', as: 'speakers'
         get '/speakers/:id' => 'schedule#speaker', as: 'speaker'
+        get '/qrcode' => 'schedule#qrcode', as: 'qrcode'
 
         resources :events do
           resource :feedback, controller: :feedback
@@ -78,6 +79,7 @@ Frab::Application.routes.draw do
         get :edit_rooms
         get :edit_ticket_server
         get :edit_notifications
+        post :send_notification
       end
       get '/conferences/default_notifications' => 'conferences#default_notifications', as: 'conferences_default_notifications'
 
@@ -103,12 +105,14 @@ Frab::Application.routes.draw do
           get :start_review
           get :cards
           get :export_accepted
+          get :export_confirmed
         end
         member do
           get :people
           get :edit_people
           get :ticket
           put :update_state
+          post :custom_notification
         end
         resource :event_rating
         resources :event_feedbacks

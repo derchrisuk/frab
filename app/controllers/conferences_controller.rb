@@ -30,6 +30,7 @@ class ConferencesController < ApplicationController
   def new
     params.delete(:conference_acronym)
     @conference = Conference.new
+    @possible_parents = Conference.where(parent: nil)
     @first = true if Conference.count == 0
 
     respond_to do |format|
@@ -47,14 +48,25 @@ class ConferencesController < ApplicationController
     end
   end
 
+  def send_notification
+    SendBulkTicketJob.new.async.perform @conference, params[:notification]
+    redirect_to edit_notifications_conference_path, notice: 'Bulk notifications for events in ' + params[:notification] + ' enqueued.'
+  end
+
   # POST /conferences
   def create
     @conference = Conference.new(conference_params)
+
+    if @conference.sub_conference? and not can? :administate, @conference.parent
+      @conference.parent = nil
+    end
 
     respond_to do |format|
       if @conference.save
         format.html { redirect_to(conference_home_path(conference_acronym: @conference.acronym), notice: 'Conference was successfully created.') }
       else
+        @possible_parents = Conference.where(parent: nil)
+        flash[:errors] = @conference.errors.full_messages.join
         format.html { render action: 'new' }
       end
     end
@@ -63,12 +75,12 @@ class ConferencesController < ApplicationController
   # PUT /conferences/1
   def update
     respond_to do |format|
-      if @conference.update_attributes(conference_params)
+      if @conference.update_attributes(existing_conference_params)
         format.html { redirect_to(edit_conference_path(conference_acronym: @conference.acronym), notice: 'Conference was successfully updated.') }
       else
         # redirect to the right nested form page
         flash[:errors] = @conference.errors.full_messages.join
-        format.html { render action: get_previous_nested_form(conference_params) }
+        format.html { render action: get_previous_nested_form(existing_conference_params) }
       end
     end
   end
@@ -96,7 +108,7 @@ class ConferencesController < ApplicationController
       next if attribs.nil?
       next unless attribs > 0
       test = name.gsub('_attributes', '')
-      next unless %w(rooms days schedule tracks ticket_server ).include?(test)
+      next unless %w(rooms days schedule notifications tracks ticket_server).include?(test)
       return "edit_#{test}"
     }
     'edit'
@@ -121,17 +133,54 @@ class ConferencesController < ApplicationController
     @search.result(distinct: true)
   end
 
-  def conference_params
-    params.require(:conference).permit(
-      :acronym, :title, :timezone, :timeslot_duration, :default_timeslots, :max_timeslots, :feedback_enabled, :expenses_enabled,
-      :transport_needs_enabled, :email, :program_export_base_url, :schedule_version, :schedule_public, :color, :ticket_type,
-      :event_state_visible, :schedule_custom_css, :schedule_html_intro, :default_recording_license,
-      rooms_attributes: %i(name size public rank _destroy id),
-      days_attributes: %i(start_date end_date _destroy id),
-      tracks_attributes: %i(name color _destroy id),
+  def allowed_params
+    [
+      :acronym, :bulk_notification_enabled, :color, :default_recording_license, :default_timeslots, :email,
+      :event_state_visible, :expenses_enabled, :feedback_enabled, :max_timeslots, :program_export_base_url,
+      :schedule_custom_css, :schedule_html_intro, :schedule_public, :schedule_version, :ticket_type,
+      :title, :transport_needs_enabled,
       languages_attributes: %i(language_id code _destroy id),
       ticket_server_attributes: %i(url user password queue _destroy id),
-      notifications_attributes: %i(id locale accept_subject accept_body reject_subject reject_body _destroy)
-    )
+      notifications_attributes: %i(id locale accept_subject accept_body reject_subject reject_body schedule_subject schedule_body _destroy)
+    ]
+  end
+
+  def conference_params
+    allowed = allowed_params
+
+    if params[:conference][:parent_id].present?
+      allowed += [:parent_id]
+    else
+      allowed += [
+        :timezone, :timeslot_duration,
+        days_attributes: %i(start_date end_date _destroy id)
+      ]
+    end
+
+    params.require(:conference).permit(allowed)
+  end
+
+  def existing_conference_params
+    allowed = allowed_params
+
+    if @conference.new_record?
+      allowed += [:parent_id]
+    end
+
+    if @conference.main_conference?
+      allowed += [
+        :timezone, :timeslot_duration,
+        days_attributes: %i(start_date end_date _destroy id)
+      ]
+    end
+
+    if (@conference.main_conference? || can?(:adminstrate, @conference.parent))
+      allowed += [
+        rooms_attributes: %i(name size public rank _destroy id),
+        tracks_attributes: %i(name color _destroy id)
+      ]
+    end
+
+    params.require(:conference).permit(allowed)
   end
 end

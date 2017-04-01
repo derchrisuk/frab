@@ -63,7 +63,7 @@ class PentabarfImportHelper
         # nowhere to find. just use the conference dates instead..
         created_at: fake_days.first.to_datetime,
         updated_at: fake_days.last.to_datetime,
-      # TODO ticket server, instead of link? DO TICKET URLS THEY END UP PUBLIC?
+        # TODO ticket server, instead of link? DO TICKET URLS THEY END UP PUBLIC?
       )
       conference_mapping[conference['conference_id']] = new_conference.id
 
@@ -123,7 +123,6 @@ class PentabarfImportHelper
       new_room = Room.create!(
         name: room['conference_room'],
         size: room['size'],
-        public: room['public'],
         conference_id: mappings(:conferences)[room['conference_id']]
       )
       room_mapping[room['conference_room_id']] = new_room.id
@@ -563,7 +562,7 @@ class PentabarfImportHelper
   end
 
   def disable_event_callback(average)
-    # we wan't to update this in batch after all the inserts
+    # we want to update this in batch after all the inserts
     Event.skip_callback(:save, :after, :update_conflicts)
     average.skip_callback(:save, :after, :update_average)
     # TODO disable counter_cache?
